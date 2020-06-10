@@ -18,6 +18,7 @@ func main() {
 		log.WithError(err).Error("error in main")
 		os.Exit(1)
 	}
+	os.Exit(0)
 }
 
 func run() error {
@@ -29,7 +30,15 @@ func run() error {
 	}
 
 	scraper := scrap.NewScraper(logger, db)
-	products := scraper.Scrap([]string{"https://www.apple.com/es/shop/refurbished/ipad"})
+	products := scraper.Scrap([]string{
+		"https://www.apple.com/es/shop/refurbished/ipad",
+		"https://www.apple.com/es/shop/refurbished/iphone",
+		"https://www.apple.com/es/shop/refurbished/mac",
+		"https://www.apple.com/es/shop/refurbished/ipod",
+		"https://www.apple.com/es/shop/refurbished/appletv",
+		"https://www.apple.com/es/shop/refurbished/accessories",
+		"https://www.apple.com/es/shop/refurbished/clearance",
+	})
 	logger.WithField("products", len(products)).Info("finished scraping")
 
 	return nil
