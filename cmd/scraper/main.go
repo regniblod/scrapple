@@ -8,7 +8,7 @@ import (
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/cli"
-	jsonlog "github.com/apex/log/handlers/json"
+	"github.com/apex/log/handlers/json"
 
 	"github.com/dgraph-io/badger/v2"
 )
@@ -29,8 +29,8 @@ func run() error {
 	}
 
 	scraper := scrap.NewScraper(logger, db)
-	scraper.Scrap([]string{"https://www.apple.com/es/shop/refurbished/ipad"})
-	//logger.Info("application initialized")
+	products := scraper.Scrap([]string{"https://www.apple.com/es/shop/refurbished/ipad"})
+	logger.WithField("products", len(products)).Info("finished scraping")
 
 	return nil
 }
@@ -39,7 +39,7 @@ func configureLogging() log.Interface {
 	if os.Getenv("APP_ENV") == "dev" {
 		log.SetHandler(cli.New(os.Stdout))
 	} else {
-		log.SetHandler(jsonlog.New(os.Stdout))
+		log.SetHandler(json.New(os.Stdout))
 	}
 
 	log.Log.Info("logging loaded")

@@ -2,6 +2,7 @@ package scrap
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"regexp"
@@ -13,14 +14,35 @@ import (
 	"github.com/dgraph-io/badger/v2"
 )
 
-//type Retriever interface {
-//	retrieve(url string) ([]byte, error)
-//}
+type Retriever interface {
+	retrieve(url string) ([]byte, error)
+}
 
-type Scraper struct {
+type retriever struct{}
+
+func (r retriever) retrieve(url string) ([]byte, error) {
+	res, err := http.Get(url)
+	if err != nil {
+		return []byte{}, fmt.Errorf("getting url %s. %w", url, err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		return []byte{}, fmt.Errorf("status code error: %d %s. %w", res.StatusCode, res.Status, err)
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return []byte{}, fmt.Errorf("reading body. %w", err)
+	}
+
+	return body, nil
+}
+
+type scraper struct {
 	logger log.Interface
 	db     *badger.DB
-	//Retriever
+	Retriever
 }
 
 type Product struct {
@@ -32,43 +54,59 @@ type Product struct {
 	storeURL      string
 }
 
-func NewScraper(logger log.Interface, db *badger.DB) *Scraper {
-	return &Scraper{logger, db}
+type jsonProducts struct {
+	Product []struct {
+		PartNumber        string `json:"partNumber"`
+		ProductDetailsURL string `json:"productDetailsUrl"`
+		Price             struct {
+			SeoPrice              float64 `json:"seoPrice"`
+			OriginalProductAmount float64 `json:"originalProductAmount"`
+		} `json:"price"`
+		Image struct {
+			SrcSet struct {
+				Src string `json:"src"`
+			} `json:"srcSet"`
+		} `json:"image"`
+	} `json:"tiles"`
 }
 
-func (s *Scraper) Scrap(urls []string) error {
+func NewScraper(logger log.Interface, db *badger.DB) *scraper {
+	return &scraper{logger, db, &retriever{}}
+}
+
+func (s *scraper) Scrap(urls []string) []Product {
+	m := sync.RWMutex{}
+
 	wg := &sync.WaitGroup{}
 	wg.Add(len(urls))
 
+	var products []Product
+
 	for _, url := range urls {
 		go func(url string) {
-			s.scrapSingle(url)
-			wg.Done()
+			defer wg.Done()
+
+			ps, err := s.scrapSingle(url)
+			if err != nil {
+				s.logger.WithError(err).Error("scraping url")
+			}
+
+			m.Lock()
+			defer m.Unlock()
+
+			products = append(products, ps...)
 		}(url)
 	}
 
 	wg.Wait()
 
-	return nil
+	return products
 }
 
-func (s *Scraper) scrapSingle(url string) []Product {
-	res, err := http.Get(url)
+func (s *scraper) scrapSingle(url string) ([]Product, error) {
+	body, err := s.retrieve(url)
 	if err != nil {
-		s.logger.WithError(err).Errorf("getting %s", url)
-		return nil
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != 200 {
-		s.logger.Errorf("status code error: %d %s", res.StatusCode, res.Status)
-		return nil
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		s.logger.WithError(err).Error("reading http response")
-		return nil
+		return []Product{}, fmt.Errorf("retrieving url. %w", err)
 	}
 
 	strippedBody := strings.ReplaceAll(strings.ReplaceAll(string(body), " ", ""), "\n", "")
@@ -77,39 +115,33 @@ func (s *Scraper) scrapSingle(url string) []Product {
 	matches := rgx.FindStringSubmatch(strippedBody)
 
 	if matches == nil || len(matches) < 2 {
-		s.logger.Error("cannot match regex")
-		return nil
+		return []Product{}, fmt.Errorf("cannot match regex")
 	}
 
 	// first match is the whole <script>...</script>, second one is just the json
-	var jsonProducts map[string]interface{}
-	err = json.Unmarshal([]byte(matches[1]+"}"), &jsonProducts)
-	if err != nil {
-		s.logger.WithError(err).Error("unmarshalling json")
-		return nil
+	var jsonProducts jsonProducts
+	if err := json.Unmarshal([]byte(matches[1]+"}"), &jsonProducts); err != nil {
+		return []Product{}, fmt.Errorf("unmarshalling json. %w", err)
 	}
 
-	var products []Product
-	tiles := jsonProducts["tiles"].([]interface{})
-	for _, tile := range tiles {
-		jsonProduct := tile.(map[string]interface{})
-		price := jsonProduct["price"].(map[string]interface{})
-		image := jsonProduct["image"].(map[string]interface{})
-		storeURL := strings.Split(jsonProduct["productDetailsUrl"].(string), "?")[0]
+	products := make([]Product, len(jsonProducts.Product))
+
+	for i, p := range jsonProducts.Product {
+		storeURL := strings.Split(p.ProductDetailsURL, "?")[0]
 		splitStoreURL := strings.Split(storeURL, "/")
 
 		product := Product{
-			jsonProduct["partNumber"].(string),
+			p.PartNumber,
 			strings.ReplaceAll(strings.TrimPrefix(splitStoreURL[len(splitStoreURL)-1], "Refurbished-"), "-", " "),
-			price["seoPrice"].(float64),
-			price["originalProductAmount"].(float64),
-			strings.Split(image["srcSet"].(map[string]interface{})["src"].(string), "?")[0],
+			p.Price.SeoPrice,
+			p.Price.OriginalProductAmount,
+			strings.Split(p.Image.SrcSet.Src, "?")[0],
 			storeURL,
 		}
-		products = append(products, product)
+		products[i] = product
 
 		s.logger.WithField("id", product.id).WithField("name", product.name).Info("product found")
 	}
 
-	return products
+	return products, nil
 }
