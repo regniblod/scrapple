@@ -2,9 +2,8 @@ package scrap
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -14,35 +13,14 @@ import (
 	"github.com/dgraph-io/badger/v2"
 )
 
-type Retriever interface {
-	retrieve(url string) ([]byte, error)
+type URLGetter interface {
+	Get(url string) ([]byte, error)
 }
 
-type retriever struct{}
-
-func (r retriever) retrieve(url string) ([]byte, error) {
-	res, err := http.Get(url)
-	if err != nil {
-		return []byte{}, fmt.Errorf("getting url %s. %w", url, err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != 200 {
-		return []byte{}, fmt.Errorf("status code error: %d %s. %w", res.StatusCode, res.Status, err)
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return []byte{}, fmt.Errorf("reading body. %w", err)
-	}
-
-	return body, nil
-}
-
-type scraper struct {
+type Scraper struct {
 	logger log.Interface
 	db     *badger.DB
-	Retriever
+	getter URLGetter
 }
 
 type Product struct {
@@ -52,6 +30,8 @@ type Product struct {
 	originalPrice float64
 	imageURL      string
 	storeURL      string
+	locale        string
+	category      string
 }
 
 type jsonProducts struct {
@@ -70,32 +50,36 @@ type jsonProducts struct {
 	} `json:"tiles"`
 }
 
-func NewScraper(logger log.Interface, db *badger.DB) *scraper {
-	return &scraper{logger, db, &retriever{}}
+var ErrCannotMatchRegex = errors.New("cannot match regex")
+
+func NewScraper(logger log.Interface, db *badger.DB, getter URLGetter) *Scraper {
+	return &Scraper{logger, db, getter}
 }
 
-func (s *scraper) Scrap(urls []string) []Product {
+func (s *Scraper) Scrap(locales []string, categories []string) []Product {
 	m := sync.RWMutex{}
 
 	wg := &sync.WaitGroup{}
-	wg.Add(len(urls))
+	wg.Add(len(locales) * len(categories))
 
 	var products []Product
 
-	for _, url := range urls {
-		go func(url string) {
-			defer wg.Done()
+	for _, locale := range locales {
+		for _, category := range categories {
+			go func(locale, category string) {
+				defer wg.Done()
 
-			ps, err := s.scrapSingle(url)
-			if err != nil {
-				s.logger.WithError(err).Error("scraping url")
-			}
+				ps, err := s.scrapSingle(locale, category)
+				if err != nil {
+					s.logger.WithError(err).Error("scraping url")
+				}
 
-			m.Lock()
-			defer m.Unlock()
+				m.Lock()
+				defer m.Unlock()
 
-			products = append(products, ps...)
-		}(url)
+				products = append(products, ps...)
+			}(locale, category)
+		}
 	}
 
 	wg.Wait()
@@ -103,10 +87,12 @@ func (s *scraper) Scrap(urls []string) []Product {
 	return products
 }
 
-func (s *scraper) scrapSingle(url string) ([]Product, error) {
-	body, err := s.retrieve(url)
+func (s *Scraper) scrapSingle(locale, category string) ([]Product, error) {
+	url := fmt.Sprintf("https://www.apple.com/%s/shop/refurbished/%s", locale, category)
+	body, err := s.getter.Get(url)
+
 	if err != nil {
-		return []Product{}, fmt.Errorf("retrieving url. %w", err)
+		return []Product{}, fmt.Errorf("retrieving url '%s'. %w", url, err)
 	}
 
 	strippedBody := strings.ReplaceAll(strings.ReplaceAll(string(body), " ", ""), "\n", "")
@@ -115,7 +101,7 @@ func (s *scraper) scrapSingle(url string) ([]Product, error) {
 	matches := rgx.FindStringSubmatch(strippedBody)
 
 	if matches == nil || len(matches) < 2 {
-		return []Product{}, fmt.Errorf("cannot match regex")
+		return []Product{}, ErrCannotMatchRegex
 	}
 
 	// first match is the whole <script>...</script>, second one is just the json
@@ -137,10 +123,12 @@ func (s *scraper) scrapSingle(url string) ([]Product, error) {
 			p.Price.OriginalProductAmount,
 			strings.Split(p.Image.SrcSet.Src, "?")[0],
 			storeURL,
+			locale,
+			category,
 		}
 		products[i] = product
 
-		s.logger.WithField("id", product.id).WithField("name", product.name).Info("product found")
+		s.logger.WithField("id", product.id).WithField("locale", locale).WithField("name", product.name).Info("product found")
 	}
 
 	return products, nil

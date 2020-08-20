@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
+	ihttp "github.com/regniblod/boxr/internal/http"
 	"github.com/regniblod/boxr/internal/scrap"
 
 	"github.com/apex/log"
@@ -18,6 +20,7 @@ func main() {
 		log.WithError(err).Error("error in main")
 		os.Exit(1)
 	}
+
 	os.Exit(0)
 }
 
@@ -29,17 +32,13 @@ func run() error {
 		return err
 	}
 
-	scraper := scrap.NewScraper(logger, db)
-	products := scraper.Scrap([]string{
-		"https://www.apple.com/es/shop/refurbished/ipad",
-		"https://www.apple.com/es/shop/refurbished/iphone",
-		"https://www.apple.com/es/shop/refurbished/mac",
-		"https://www.apple.com/es/shop/refurbished/ipod",
-		"https://www.apple.com/es/shop/refurbished/appletv",
-		"https://www.apple.com/es/shop/refurbished/accessories",
-		"https://www.apple.com/es/shop/refurbished/clearance",
-	})
-	logger.WithField("products", len(products)).Info("finished scraping")
+	// locales := []string{"es", "fr", "uk", "de", "it"}
+	// categories := []string{"ipad", "iphone", "mac", "ipod", "appletv", "accessories", "clearance"}
+	locales := []string{"es"}
+	categories := []string{"ipad"}
+	scraper := scrap.NewScraper(logger, db, ihttp.NewURLGetter(*http.DefaultClient))
+	products := scraper.Scrap(locales, categories)
+	logger.WithField("total_products", len(products)).Info("finished scraping")
 
 	return nil
 }
