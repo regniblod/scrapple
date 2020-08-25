@@ -25,6 +25,9 @@ type Scraper struct {
 
 type Product struct {
 	id            string
+	family        string
+	color         string
+	capacity      string
 	name          string
 	price         float64
 	originalPrice float64
@@ -36,7 +39,15 @@ type Product struct {
 
 type jsonProducts struct {
 	Product []struct {
+		Filters struct {
+			Dimensions struct {
+				RefurbClearModel  string `json:"refurbClearModel"`
+				DimensionColor    string `json:"dimensionColor"`
+				DimensionCapacity string `json:"dimensionCapacity"`
+			}
+		}
 		PartNumber        string `json:"partNumber"`
+		Title             string `json:"title"`
 		ProductDetailsURL string `json:"productDetailsUrl"`
 		Price             struct {
 			SeoPrice              float64 `json:"seoPrice"`
@@ -95,40 +106,39 @@ func (s *Scraper) scrapSingle(locale, category string) ([]Product, error) {
 		return []Product{}, fmt.Errorf("retrieving url '%s'. %w", url, err)
 	}
 
-	strippedBody := strings.ReplaceAll(strings.ReplaceAll(string(body), " ", ""), "\n", "")
-
-	rgx := regexp.MustCompile(`<script>window.REFURB_GRID_BOOTSTRAP=(.+)};</script>`)
-	matches := rgx.FindStringSubmatch(strippedBody)
+	rgx := regexp.MustCompile(`window\.REFURB_GRID_BOOTSTRAP = (\n|.+);`)
+	matches := rgx.FindStringSubmatch(string(body))
 
 	if matches == nil || len(matches) < 2 {
 		return []Product{}, ErrCannotMatchRegex
 	}
 
-	// first match is the whole <script>...</script>, second one is just the json
+	// first match is the whole `window.REFURB_GRID_BOOTSTRAP = ...` second one is just the json
 	var jsonProducts jsonProducts
-	if err := json.Unmarshal([]byte(matches[1]+"}"), &jsonProducts); err != nil {
+	if err := json.Unmarshal([]byte(matches[1]), &jsonProducts); err != nil {
 		return []Product{}, fmt.Errorf("unmarshalling json. %w", err)
 	}
 
 	products := make([]Product, len(jsonProducts.Product))
 
 	for i, p := range jsonProducts.Product {
-		storeURL := strings.Split(p.ProductDetailsURL, "?")[0]
-		splitStoreURL := strings.Split(storeURL, "/")
-
 		product := Product{
 			p.PartNumber,
-			strings.ReplaceAll(strings.TrimPrefix(splitStoreURL[len(splitStoreURL)-1], "Refurbished-"), "-", " "),
+			p.Filters.Dimensions.RefurbClearModel,
+			p.Filters.Dimensions.DimensionColor,
+			p.Filters.Dimensions.DimensionCapacity,
+			p.Title,
 			p.Price.SeoPrice,
 			p.Price.OriginalProductAmount,
 			strings.Split(p.Image.SrcSet.Src, "?")[0],
-			storeURL,
+			strings.Split(p.ProductDetailsURL, "?")[0],
 			locale,
 			category,
 		}
 		products[i] = product
 
-		s.logger.WithField("id", product.id).WithField("locale", locale).WithField("name", product.name).Info("product found")
+		fmt.Printf("%+v\n", product)
+		// s.logger.WithField("id", product.id).WithField("locale", locale).WithField("family", product.Family).WithField("name", product.name).Info("product found")
 	}
 
 	return products, nil
