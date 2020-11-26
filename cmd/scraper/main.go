@@ -1,23 +1,42 @@
 package main
 
 import (
+	"expvar"
 	"fmt"
 	"net/http"
 	"os"
 
-	ihttp "github.com/regniblod/boxr/internal/http"
-	"github.com/regniblod/boxr/internal/scrap"
-
-	"github.com/apex/log"
-	"github.com/apex/log/handlers/cli"
-	"github.com/apex/log/handlers/json"
-
+	"github.com/ardanlabs/conf"
 	"github.com/dgraph-io/badger/v2"
+	ihttp "github.com/regniblod/scrapple/internal/http"
+	"github.com/regniblod/scrapple/internal/scrap"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
+
+// build is the git version of this program. It is set using build flags in the makefile.
+var build string = "develop"
+var devEnv string = "dev"
+
+type Config struct {
+	Name     string `conf:""`
+	Env      string `conf:"default:dev"`
+	Database struct {
+		Host     string `conf:"default:localhost"`
+		Port     int    `conf:"default:5432"`
+		User     string `conf:"default:app"`
+		Password string `conf:"default:app,noprint"`
+		Name     string `conf:"default:app"`
+	}
+	Scrapper struct {
+		Locales    []string `conf:""`
+		Categories []string `conf:""`
+	}
+}
 
 func main() {
 	if err := run(); err != nil {
-		log.WithError(err).Error("error in main")
+		log.Error().Err(err).Msg("error in main")
 		os.Exit(1)
 	}
 
@@ -26,38 +45,42 @@ func main() {
 
 func run() error {
 	logger := configureLogging()
+	logger.Info().Str("build", build).Msg("initializing application")
+
+	cfg, err := parseConfig(logger)
+	if err != nil {
+		return err
+	}
 
 	db, err := configureDatabase(logger)
 	if err != nil {
 		return err
 	}
 
-	// locales := []string{"es", "fr", "uk", "de", "it"}
-	// categories := []string{"ipad", "iphone", "mac", "ipod", "appletv", "accessories", "clearance"}
-	locales := []string{"es"}
-	categories := []string{"ipad"}
 	scraper := scrap.NewScraper(logger, db, ihttp.NewURLGetter(*http.DefaultClient))
-	products := scraper.Scrap(locales, categories)
-	logger.WithField("total_products", len(products)).Info("finished scraping")
+	products := scraper.Scrap(cfg.Scrapper.Locales, cfg.Scrapper.Categories)
+	logger.Info().Int("total_products", len(products)).Msg("finished scraping")
 
 	return nil
 }
 
-func configureLogging() log.Interface {
+func configureLogging() zerolog.Logger {
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+
+	var log zerolog.Logger = zerolog.New(os.Stdout)
+
 	if os.Getenv("APP_ENV") == "dev" {
-		log.SetHandler(cli.New(os.Stdout))
-	} else {
-		log.SetHandler(json.New(os.Stdout))
+		log = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	}
 
-	log.Log.Info("logging loaded")
+	log.Info().Msg("logging loaded")
 
-	return log.Log
+	return log
 }
 
-func configureDatabase(logger log.Interface) (*badger.DB, error) {
+func configureDatabase(logger zerolog.Logger) (*badger.DB, error) {
 	opts := badger.DefaultOptions("/tmp/badger")
-	opts.Logger = &BadgeLogger{logger.(*log.Logger)}
 
 	db, err := badger.Open(opts)
 	if err != nil {
@@ -66,4 +89,42 @@ func configureDatabase(logger log.Interface) (*badger.DB, error) {
 	defer db.Close()
 
 	return db, nil
+}
+
+func parseConfig(logger zerolog.Logger) (*Config, error) {
+	cfg := &Config{}
+
+	if err := conf.Parse(os.Args[1:], "app", cfg); err != nil {
+		switch err {
+		case conf.ErrHelpWanted:
+			usage, err := conf.Usage("", &cfg)
+			if err != nil {
+				return nil, fmt.Errorf("generating config usage: %w", err)
+			}
+
+			fmt.Println(usage)
+			os.Exit(0)
+		case conf.ErrVersionWanted:
+			version, err := conf.VersionString("", cfg)
+			if err != nil {
+				return nil, fmt.Errorf("generating config version: %w", err)
+			}
+
+			fmt.Println(version)
+			os.Exit(0)
+		}
+
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	expvar.NewString("build").Set(build)
+
+	out, err := conf.String(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("generating config for output: %w", err)
+	}
+
+	logger.Info().Msgf("loaded config:\n%s", out)
+
+	return cfg, nil
 }

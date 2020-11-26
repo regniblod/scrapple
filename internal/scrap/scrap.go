@@ -8,9 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/apex/log"
-
 	"github.com/dgraph-io/badger/v2"
+	"github.com/rs/zerolog"
 )
 
 type URLGetter interface {
@@ -18,7 +17,7 @@ type URLGetter interface {
 }
 
 type Scraper struct {
-	logger log.Interface
+	logger zerolog.Logger
 	db     *badger.DB
 	getter URLGetter
 }
@@ -63,7 +62,7 @@ type jsonProducts struct {
 
 var ErrCannotMatchRegex = errors.New("cannot match regex")
 
-func NewScraper(logger log.Interface, db *badger.DB, getter URLGetter) *Scraper {
+func NewScraper(logger zerolog.Logger, db *badger.DB, getter URLGetter) *Scraper {
 	return &Scraper{logger, db, getter}
 }
 
@@ -82,7 +81,7 @@ func (s *Scraper) Scrap(locales []string, categories []string) []Product {
 
 				ps, err := s.scrapSingle(locale, category)
 				if err != nil {
-					s.logger.WithError(err).Error("scraping url")
+					s.logger.Err(err).Msg("scraping url")
 				}
 
 				m.Lock()
@@ -137,8 +136,13 @@ func (s *Scraper) scrapSingle(locale, category string) ([]Product, error) {
 		}
 		products[i] = product
 
-		fmt.Printf("%+v\n", product)
-		// s.logger.WithField("id", product.id).WithField("locale", locale).WithField("family", product.Family).WithField("name", product.name).Info("product found")
+		// fmt.Printf("%+v\n", product)
+		s.logger.Info().
+			Str("id", product.id).
+			Str("locale", locale).
+			Str("family", product.family).
+			Str("name", product.name).
+			Msg("product found")
 	}
 
 	return products, nil
