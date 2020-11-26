@@ -1,0 +1,14 @@
+version: '3.6'
+
+services:
+  app:
+    container_name: ${APP_NAME}-app
+    build:
+      context: .
+      target: dev
+    env_file:
+      - ./.env
+    ports:
+      - ${APP_PORT}:${APP_PORT}
+    volumes:
+      - .:/build

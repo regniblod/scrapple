@@ -3,20 +3,33 @@
 #################################
 FROM golang as base
 
-RUN apt-get update
+# Install git + SSL ca certificates.
+# Git is required for fetching the dependencies.
+# Ca-certificates is required to call HTTPS endpoints.
+RUN apt-get update && apt-get install git ca-certificates && update-ca-certificates
 
-RUN mkdir build
+# Create appuser
+ENV USER=appuser
+ENV UID=10001
+
+# See https://stackoverflow.com/a/55757473/12429735RUN
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    "${USER}"
 
 # Copy project
 COPY . /build
 WORKDIR /build
 
 # Fetch dependencies.
-RUN go mod vendor && go mod verify
-
-# Create unprivileged user
-#RUN adduser -S -D -H -h /build webserver
-#USER webserver
+RUN go mod tidy
+RUN go mod vendor
+RUN go mod verify
 
 #################################
 # Dev image
@@ -31,7 +44,7 @@ RUN go get github.com/vektra/mockery/.../
 RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.27.0
 ENV GO111MODULE=on
 
-CMD ["tail", "-f", "/dev/null"]
+ENTRYPOINT ["tail", "-f", "/dev/null"]
 
 #################################
 # Build app
@@ -39,7 +52,7 @@ CMD ["tail", "-f", "/dev/null"]
 FROM base as builder
 
 # Build the binary
-RUN GO111MODULE=on CGO_ENABLED=0 GOOS=linux go build -products -installsuffix cgo -ldflags '-s -w -extldflags "-static"' -o /build/main cmd/http-server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build --mod vendor -a -installsuffix cgo -ldflags '-s -w -extldflags "-static"' -o /app ./cmd/...
 
 #################################
 # Create products smaller image
@@ -50,12 +63,13 @@ FROM scratch as prod
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
 
 # Copy our static executable
-COPY --from=builder /build/main /main
+COPY --from=builder /app/ /
 
 # Use an unprivileged user.
-USER webserver
+USER appuser:appuser
 
 # Run the hello binary.
 ENTRYPOINT ["/main"]
