@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dgraph-io/badger/v2"
 	"github.com/rs/zerolog"
 )
 
@@ -18,7 +17,6 @@ type URLGetter interface {
 
 type Scraper struct {
 	logger zerolog.Logger
-	db     *badger.DB
 	getter URLGetter
 }
 
@@ -62,8 +60,8 @@ type jsonProducts struct {
 
 var ErrCannotMatchRegex = errors.New("cannot match regex")
 
-func NewScraper(logger zerolog.Logger, db *badger.DB, getter URLGetter) *Scraper {
-	return &Scraper{logger, db, getter}
+func NewScraper(logger zerolog.Logger, getter URLGetter) *Scraper {
+	return &Scraper{logger, getter}
 }
 
 func (s *Scraper) Scrap(locales []string, categories []string) []Product {

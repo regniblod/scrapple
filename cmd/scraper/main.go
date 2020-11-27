@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/ardanlabs/conf"
-	"github.com/dgraph-io/badger/v2"
 	ihttp "github.com/regniblod/scrapple/internal/http"
 	"github.com/regniblod/scrapple/internal/scrap"
 	"github.com/rs/zerolog"
@@ -52,12 +51,7 @@ func run() error {
 		return err
 	}
 
-	db, err := configureDatabase(logger)
-	if err != nil {
-		return err
-	}
-
-	scraper := scrap.NewScraper(logger, db, ihttp.NewURLGetter(*http.DefaultClient))
+	scraper := scrap.NewScraper(logger, ihttp.NewURLGetter(*http.DefaultClient))
 	products := scraper.Scrap(cfg.Scrapper.Locales, cfg.Scrapper.Categories)
 	logger.Info().Int("total_products", len(products)).Msg("finished scraping")
 
@@ -77,18 +71,6 @@ func configureLogging() zerolog.Logger {
 	log.Info().Msg("logging loaded")
 
 	return log
-}
-
-func configureDatabase(logger zerolog.Logger) (*badger.DB, error) {
-	opts := badger.DefaultOptions("/tmp/badger")
-
-	db, err := badger.Open(opts)
-	if err != nil {
-		return nil, fmt.Errorf("opening badger db. %w", err)
-	}
-	defer db.Close()
-
-	return db, nil
 }
 
 func parseConfig(logger zerolog.Logger) (*Config, error) {
