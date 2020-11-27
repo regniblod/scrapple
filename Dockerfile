@@ -37,11 +37,11 @@ RUN go mod verify
 FROM base as dev
 
 ENV GO111MODULE=off
-RUN go get github.com/cosmtrek/air
 RUN go get github.com/go-delve/delve/cmd/dlv
 RUN go get -tags 'postgres' -u github.com/golang-migrate/migrate/cmd/migrate
 RUN go get github.com/vektra/mockery/.../
 RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.27.0
+RUN go get github.com/githubnemo/CompileDaemon
 ENV GO111MODULE=on
 
 ENTRYPOINT ["tail", "-f", "/dev/null"]

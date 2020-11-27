@@ -1,8 +1,0 @@
-# Working directory
-root = "."
-
-[misc]
-clean_on_exit = true
-
-[build]
-cmd = "GOGC=off go build -mod vendor -o ./tmp/main ./cmd/scraper"

@@ -10,6 +10,11 @@ help:
 start:
 	docker-compose up -d
 
+.PHONY: stop
+## stop: stops the Docker containers
+stop:
+	docker-compose stop
+
 .PHONY: ssh
 ## ssh: ssh's into the Docker container
 ssh:
@@ -39,13 +44,12 @@ lint:
 .PHONY: watch
 ## watch: starts watching the code for changes
 watch:
-	docker exec -it ${APP_NAME}-app air
-	# set -o allexport && . .env && set +o allexport && air
+	docker exec -it ${APP_NAME}-app /go/bin/CompileDaemon -log-prefix=false -graceful-kill=true --build="go build -mod vendor -o ./tmp/main ./cmd/scraper" -command="./tmp/main"
 
 .PHONY: mock
 ## mock: creates mocks for an interface. ex - make mocks pkg/team Repository
 mock:
-	docker exec -it ${APP_NAME}-app moeckry -name=$(word 3, $(MAKECMDGOALS)) -case=underscore -dir $(word 2, $(MAKECMDGOALS)) -output $(word 2, $(MAKECMDGOALS))/mocks
+	docker exec -it ${APP_NAME}-app mockery -name=$(word 3, $(MAKECMDGOALS)) -case=underscore -dir $(word 2, $(MAKECMDGOALS)) -output $(word 2, $(MAKECMDGOALS))/mocks
 
 .PHONY: debug-ui
 ## debug-ui: opens the debug ui (pprof)
