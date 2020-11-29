@@ -10,5 +10,6 @@ services:
       - ./.env
     ports:
       - ${APP_PORT}:${APP_PORT}
+      - ${DEBUG_PORT}:${DEBUG_PORT}
     volumes:
       - .:/build
