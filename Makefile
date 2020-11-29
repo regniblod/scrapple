@@ -44,13 +44,13 @@ lint:
 .PHONY: watch
 ## watch: starts watching the code for changes
 watch:
-	docker exec -it ${APP_NAME}-app /go/bin/CompileDaemon -log-prefix=false -graceful-kill=true --build="go build -mod vendor -o ./tmp/main ./cmd/scraper" -command="./tmp/main"
+	docker exec -it ${APP_NAME}-app /go/bin/CompileDaemon -log-prefix=false -graceful-kill=true --build="go build -mod vendor -o ./tmp/main ./cmd/${DEV_MAIN_CMD}" -command="./tmp/main"
 
 .PHONY: debug
 ## watch-debug: starts watching the code for changes and starts the debugger
 debug:
-	docker exec -it ${APP_NAME}-app go build -mod vendor -o ./tmp/main ./cmd/scraper
-	docker exec -it ${APP_NAME}-app dlv debug /build/cmd/scraper --headless --listen=:${DEBUG_PORT} --api-version=2
+	docker exec -it ${APP_NAME}-app go build -mod vendor -o ./tmp/main ./cmd/${DEV_MAIN_CMD}
+	docker exec -it ${APP_NAME}-app dlv debug /build/cmd/${DEV_MAIN_CMD} --headless --listen=:${DEV_DEBUG_PORT} --api-version=2
 
 .PHONY: mock
 ## mock: creates mocks for an interface. ex - make mocks pkg/team Repository
