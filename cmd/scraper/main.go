@@ -62,7 +62,7 @@ func configureLogging() zerolog.Logger {
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	var log zerolog.Logger = zerolog.New(os.Stdout)
+	var log zerolog.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
 	if os.Getenv("APP_ENV") == "dev" {
 		log = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
