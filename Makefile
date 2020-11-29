@@ -20,6 +20,11 @@ stop:
 ssh:
 	docker exec -it ${APP_NAME}-app bash
 
+.PHONY: build
+## build: builds the app for prod
+build:
+	CGO_ENABLED=0 GOOS=linux go build --mod vendor -a -installsuffix cgo -ldflags '-s -w -extldflags "-static" -X main.build=${shell git rev-parse --short HEAD}' -o /app ./cmd/${DEV_MAIN_CMD}
+
 .PHONY: test
 ## test: runs go test for all packages
 test:

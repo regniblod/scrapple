@@ -52,7 +52,7 @@ ENTRYPOINT ["tail", "-f", "/dev/null"]
 FROM base as builder
 
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build --mod vendor -a -installsuffix cgo -ldflags '-s -w -extldflags "-static"' -o /app ./cmd/...
+RUN CGO_ENABLED=0 GOOS=linux go build --mod vendor -a -installsuffix cgo -ldflags '-s -w -extldflags "-static" -X main.build=${shell git rev-parse --short HEAD}' -o /app ./cmd/...
 
 #################################
 # Create products smaller image
