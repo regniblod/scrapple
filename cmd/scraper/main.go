@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"expvar"
 	"fmt"
 	"net/http"
@@ -15,7 +16,12 @@ import (
 
 // build is the git version of this program. It is set using build flags in the makefile.
 var build string = "develop"
-var devEnv string = "dev"
+
+// prefix for the .env environment variables.
+const envPrefix string = "app"
+
+// dev environment name.
+const devEnv string = "dev"
 
 type Config struct {
 	Name     string `conf:""`
@@ -64,8 +70,8 @@ func configureLogging() zerolog.Logger {
 
 	var log zerolog.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
-	if os.Getenv("APP_ENV") == "dev" {
-		log = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+	if os.Getenv("APP_ENV") == devEnv {
+		log = log.Output(zerolog.NewConsoleWriter())
 	}
 
 	log.Info().Msg("logging loaded")
@@ -76,23 +82,14 @@ func configureLogging() zerolog.Logger {
 func parseConfig(logger zerolog.Logger) (*Config, error) {
 	cfg := &Config{}
 
-	if err := conf.Parse(os.Args[1:], "app", cfg); err != nil {
-		switch err {
-		case conf.ErrHelpWanted:
-			usage, err := conf.Usage("", &cfg)
+	if err := conf.Parse(os.Args[1:], envPrefix, cfg); err != nil {
+		if errors.Is(err, conf.ErrHelpWanted) {
+			usage, err := conf.Usage("", cfg)
 			if err != nil {
 				return nil, fmt.Errorf("generating config usage: %w", err)
 			}
 
 			fmt.Println(usage)
-			os.Exit(0)
-		case conf.ErrVersionWanted:
-			version, err := conf.VersionString("", cfg)
-			if err != nil {
-				return nil, fmt.Errorf("generating config version: %w", err)
-			}
-
-			fmt.Println(version)
 			os.Exit(0)
 		}
 
