@@ -49,6 +49,9 @@ type jsonProducts struct {
 		Price             struct {
 			SeoPrice              float64 `json:"seoPrice"`
 			OriginalProductAmount float64 `json:"originalProductAmount"`
+			CurrentPrice          struct {
+				RawAmount float64 `json:raw_amount`
+			}
 		} `json:"price"`
 		Image struct {
 			SrcSet struct {
@@ -98,7 +101,6 @@ func (s *Scraper) Scrap(locales []string, categories []string) []Product {
 func (s *Scraper) scrapSingle(locale, category string) ([]Product, error) {
 	url := fmt.Sprintf("https://www.apple.com/%s/shop/refurbished/%s", locale, category)
 	body, err := s.getter.Get(url)
-
 	if err != nil {
 		return []Product{}, fmt.Errorf("retrieving url '%s'. %w", url, err)
 	}
@@ -119,13 +121,18 @@ func (s *Scraper) scrapSingle(locale, category string) ([]Product, error) {
 	products := make([]Product, len(jsonProducts.Product))
 
 	for i, p := range jsonProducts.Product {
+		price := p.Price.OriginalProductAmount
+		if price == 0 {
+			price = p.Price.CurrentPrice.RawAmount
+		}
+
 		product := Product{
 			p.PartNumber,
 			p.Filters.Dimensions.RefurbClearModel,
 			p.Filters.Dimensions.DimensionColor,
 			p.Filters.Dimensions.DimensionCapacity,
-			p.Title,
-			p.Price.SeoPrice,
+			strings.ReplaceAll(strings.ReplaceAll(p.Title, "\u00a0", " "), "  ", " "),
+			price,
 			p.Price.OriginalProductAmount,
 			strings.Split(p.Image.SrcSet.Src, "?")[0],
 			strings.Split(p.ProductDetailsURL, "?")[0],
@@ -140,6 +147,7 @@ func (s *Scraper) scrapSingle(locale, category string) ([]Product, error) {
 			Str("locale", locale).
 			Str("family", product.family).
 			Str("name", product.name).
+			Float64("price", product.originalPrice).
 			Msg("product found")
 	}
 

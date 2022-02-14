@@ -48,7 +48,7 @@ lint:
 
 .PHONY: watch
 ## watch: starts watching the code for changes
-watch:
+watch: start
 	docker exec -it ${APP_NAME}-app /go/bin/CompileDaemon -log-prefix=false -graceful-kill=true --build="go build -mod vendor -o ./tmp/main ./cmd/${DEV_MAIN_CMD}" -command="./tmp/main"
 
 .PHONY: debug
